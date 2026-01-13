@@ -2,22 +2,29 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Traffic Jam Simulation - Audience Friendly</title>
+<title>Traffic Jam Simulation - Fixed Speed Issue</title>
 <style>
   body { background: #222; color: white; font-family: sans-serif; text-align: center; }
   canvas { background: #555; display: block; margin: 20px auto; border: 2px solid #888; }
   .controls { margin: 10px; }
   label { margin-right: 10px; }
+  .info { margin: 15px; font-size: 1.1em; }
 </style>
 </head>
 <body>
-<h2>Phantom Traffic Jam Simulation</h2>
+<h2>Phantom Traffic Jam Simulation - Fixed</h2>
+
+<div class="info">
+  <p>Fixed: Cars now maintain realistic speeds (max ~30 m/s ≈ 108 km/h)</p>
+</div>
 
 <div class="controls">
   <label>Number of Cars: <span id="numCarsVal">80</span></label>
   <input type="range" id="numCars" min="20" max="150" value="80">
   <label>Reaction Time (τ): <span id="tauVal">1.2</span>s</label>
   <input type="range" id="tau" min="0.5" max="3" step="0.1" value="1.2">
+  <label>Max Speed: <span id="maxSpeedVal">30</span> m/s</label>
+  <input type="range" id="maxSpeed" min="15" max="40" step="1" value="30">
 </div>
 
 <canvas id="trafficCanvas" width="1000" height="400"></canvas>
@@ -27,24 +34,26 @@ const canvas = document.getElementById('trafficCanvas');
 const ctx = canvas.getContext('2d');
 
 // ==============================
-// PARAMETERS
+// PARAMETERS - FIXED
 // ==============================
 let L = 1000;       // road length in meters
 let N = 80;         // number of cars
 let dt = 0.1;       // time step (s)
 let T = 10000;      // large enough for animation
 let P_max = 0.25;   // max density
-let C = 25;         // speed scaling constant
+let C = 15;         // REDUCED speed scaling constant (from 25 to 15)
 let tau = 1.2;      // reaction time
+let MAX_SPEED = 30; // Maximum realistic speed in m/s (108 km/h)
 const noise = 0.05;
 
 // ==============================
 // INITIAL CONDITIONS
 // ==============================
-let x = Array.from({length: N}, (_, i) => i * (L / N));
-let v = Array(N).fill(15);
+// Start with slight randomization to create initial disturbance
+let x = Array.from({length: N}, (_, i) => i * (L / N) + (Math.random() * 5 - 2.5));
+let v = Array(N).fill(20); // Start at moderate speed, not max
 let delaySteps = Math.ceil(tau / dt);
-let vDesiredHistory = Array.from({length: delaySteps}, () => Array(N).fill(15));
+let vDesiredHistory = Array.from({length: delaySteps}, () => Array(N).fill(20));
 
 // ==============================
 // UI CONTROLS
@@ -53,31 +62,62 @@ const numCarsSlider = document.getElementById('numCars');
 const numCarsVal = document.getElementById('numCarsVal');
 const tauSlider = document.getElementById('tau');
 const tauVal = document.getElementById('tauVal');
+const maxSpeedSlider = document.getElementById('maxSpeed');
+const maxSpeedVal = document.getElementById('maxSpeedVal');
 
 numCarsSlider.addEventListener('input', () => {
     N = parseInt(numCarsSlider.value);
     numCarsVal.textContent = N;
     resetSimulation();
 });
+
 tauSlider.addEventListener('input', () => {
     tau = parseFloat(tauSlider.value);
     tauVal.textContent = tau;
     delaySteps = Math.ceil(tau / dt);
-    vDesiredHistory = Array.from({length: delaySteps}, () => Array(N).fill(15));
+    vDesiredHistory = Array.from({length: delaySteps}, () => Array(N).fill(20));
+});
+
+maxSpeedSlider.addEventListener('input', () => {
+    MAX_SPEED = parseInt(maxSpeedSlider.value);
+    maxSpeedVal.textContent = MAX_SPEED;
 });
 
 // ==============================
 // RESET FUNCTION
 // ==============================
 function resetSimulation() {
-    x = Array.from({length: N}, (_, i) => i * (L / N));
-    v = Array(N).fill(15);
+    // Add slight randomization to positions to trigger jams
+    x = Array.from({length: N}, (_, i) => i * (L / N) + (Math.random() * 5 - 2.5));
+    v = Array(N).fill(20); // Reset to moderate speed
     delaySteps = Math.ceil(tau / dt);
-    vDesiredHistory = Array.from({length: delaySteps}, () => Array(N).fill(15));
+    vDesiredHistory = Array.from({length: delaySteps}, () => Array(N).fill(20));
 }
 
 // ==============================
-// SIMULATION LOOP
+// REALISTIC SPEED FUNCTION - FIXED
+// ==============================
+function calculateDesiredSpeed(density) {
+    // More realistic speed-density relationship
+    // At zero density, cars want to go at max speed
+    // At max density, speed approaches zero
+    
+    // Safety distance: at least 2 seconds gap
+    const safeTimeGap = 2.0; // seconds
+    const minGap = 5; // meters (car length + buffer)
+    
+    // Convert density to gap
+    const gap = 1 / Math.max(density, 0.001);
+    
+    // Calculate safe speed based on gap
+    let safeSpeed = Math.max(0, (gap - minGap) / safeTimeGap);
+    
+    // Cap at maximum speed
+    return Math.min(safeSpeed, MAX_SPEED);
+}
+
+// ==============================
+// SIMULATION LOOP - FIXED
 // ==============================
 let step = 0;
 function simulate() {
@@ -89,8 +129,17 @@ function simulate() {
     });
     let rho = gaps.map(g => 1 / g);
 
-    // --- desired speed ---
-    let vDesired = rho.map(r => Math.max(0, Math.min(40, C * Math.log(P_max / r))));
+    // --- desired speed USING FIXED FUNCTION ---
+    let vDesired = rho.map(r => calculateDesiredSpeed(r));
+    
+    // Alternative: Original formula with better bounds
+    // let vDesired = rho.map(r => {
+    //     // Ensure we don't divide by zero or get negative values
+    //     const ratio = Math.max(0.1, P_max / Math.max(r, 0.01));
+    //     const rawSpeed = C * Math.log(ratio);
+    //     // Apply realistic bounds
+    //     return Math.max(0, Math.min(MAX_SPEED, rawSpeed));
+    // });
 
     // --- delay buffer ---
     vDesiredHistory.shift();
@@ -99,7 +148,12 @@ function simulate() {
     let vDelayed = vDesiredHistory[0];
 
     // --- acceleration & noise ---
-    let a = v.map((vi, i) => (vDelayed[i] - vi)/tau + noise*(Math.random()-0.5));
+    let a = v.map((vi, i) => {
+        const acceleration = (vDelayed[i] - vi)/tau;
+        // Add stronger noise when accelerating to simulate human imperfection
+        const noiseFactor = Math.abs(acceleration) > 2 ? noise * 2 : noise;
+        return acceleration + noiseFactor*(Math.random()-0.5);
+    });
 
     // --- update velocity & position ---
     v = v.map((vi, i) => Math.max(0, vi + a[i]*dt));
@@ -115,9 +169,19 @@ function simulate() {
 function draw() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // draw road
-    ctx.fillStyle = '#444';
+    // draw road with lane markings
+    ctx.fillStyle = '#333';
     ctx.fillRect(0, canvas.height/2 - 50, canvas.width, 100);
+    
+    // Lane markings
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([20, 15]);
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height/2);
+    ctx.lineTo(canvas.width, canvas.height/2);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
     // scale for position
     const scaleX = canvas.width / L;
@@ -127,15 +191,25 @@ function draw() {
         // map speed to color: slow=red, fast=green
         let speed = v[i];
         let color;
-        if(speed < 10) color = 'red';
-        else if(speed < 20) color = 'orange';
-        else if(speed < 30) color = 'yellow';
-        else color = 'green';
+        if(speed < 5) color = '#ff0000'; // dark red
+        else if(speed < 10) color = '#ff3333'; // red
+        else if(speed < 15) color = '#ff9933'; // orange
+        else if(speed < 20) color = '#ffff33'; // yellow
+        else if(speed < 25) color = '#99ff33'; // light green
+        else color = '#33ff33'; // green
 
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(x[i]*scaleX, canvas.height/2, 6, 0, 2*Math.PI);
         ctx.fill();
+        
+        // Add a small glow effect for faster cars
+        if(speed > 25) {
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 10;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
     }
 
     // draw info
@@ -143,7 +217,16 @@ function draw() {
     ctx.font = '16px sans-serif';
     let avgSpeed = (v.reduce((a,b)=>a+b,0)/v.length).toFixed(1);
     let density = (N/L).toFixed(2);
-    ctx.fillText(`Average Speed: ${avgSpeed} m/s | Density: ${density} cars/m`, 10, 20);
+    let minSpeed = Math.min(...v).toFixed(1);
+    let maxSpeedCurrent = Math.max(...v).toFixed(1);
+    
+    ctx.fillText(`Average Speed: ${avgSpeed} m/s | Min: ${minSpeed} | Max: ${maxSpeedCurrent}`, 10, 20);
+    ctx.fillText(`Density: ${density} cars/m | Reaction Time: ${tau}s | Cars: ${N}`, 10, 45);
+    
+    // Draw speed limit
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = '14px sans-serif';
+    ctx.fillText(`Speed Limit: ${MAX_SPEED} m/s (${Math.round(MAX_SPEED * 3.6)} km/h)`, canvas.width - 250, 20);
 }
 
 // ==============================
@@ -153,4 +236,3 @@ simulate();
 </script>
 </body>
 </html>
-
