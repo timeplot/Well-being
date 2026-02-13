@@ -133,7 +133,7 @@
         /* Info boxes */
         .info-panel {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 10px;
             margin: 20px 0;
         }
@@ -225,6 +225,35 @@
         .btn.red { background: #e74c3c; }
         .btn.green { background: #27ae60; }
         .btn.purple { background: #9b59b6; }
+        
+        /* Congestion Meter */
+        .congestion-meter {
+            margin: 10px 0;
+            text-align: left;
+        }
+        
+        .meter-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #2c3e50;
+            margin-bottom: 3px;
+        }
+        
+        .meter-bar {
+            width: 100%;
+            height: 10px;
+            background: #ecf0f1;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .meter-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #27ae60, #f39c12, #e74c3c);
+            transition: width 0.3s;
+        }
         
         /* ===== FIXED CROSSWALK ===== */
         .crosswalk-container {
@@ -423,18 +452,28 @@
             font-size: 20px;
             margin: 15px 0;
         }
+        
+        /* Average Delay */
+        .delay-badge {
+            background: #e74c3c;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🚦 DRIVE Traffic Control</h1>
         
-        <!-- Tabs -->
+        <!-- Tabs - FIXED: Added 'this' to pass element -->
         <div class="tabs">
-            <button class="tab-button active" onclick="switchTab('pedestrian')">🚶 Pedestrian</button>
-            <button class="tab-button" onclick="switchTab('intersection')">🚦 Intersection</button>
-            <button class="tab-button" onclick="switchTab('school')">🏫 School Zone</button>
-            <button class="tab-button" onclick="switchTab('report')">📊 DRIVE Report</button>
+            <button class="tab-button active" onclick="switchTab('pedestrian', this)">🚶 Pedestrian</button>
+            <button class="tab-button" onclick="switchTab('intersection', this)">🚦 Intersection</button>
+            <button class="tab-button" onclick="switchTab('school', this)">🏫 School Zone</button>
+            <button class="tab-button" onclick="switchTab('report', this)">📊 DRIVE Report</button>
         </div>
         
         <!-- Scenario Indicator -->
@@ -456,7 +495,18 @@
                 </div>
             </div>
             
-            <!-- Info Panel -->
+            <!-- NEW: Congestion Meter -->
+            <div class="congestion-meter">
+                <div class="meter-label">
+                    <span>Congestion Level</span>
+                    <span id="congestionPercent">0%</span>
+                </div>
+                <div class="meter-bar">
+                    <div class="meter-fill" id="congestionFill" style="width: 0%;"></div>
+                </div>
+            </div>
+            
+            <!-- Info Panel - Updated with 5 boxes -->
             <div class="info-panel">
                 <div class="info-box">
                     <strong>Speed</strong>
@@ -473,9 +523,14 @@
                     <span id="spacing">10.0</span>
                     <small>m</small>
                 </div>
-                <div class="info-box" id="trafficLightState">
+                <div class="info-box">
                     <strong>Light</strong>
                     <span id="lightStatus">🟢 GO</span>
+                </div>
+                <div class="info-box">
+                    <strong>Avg Delay</strong>
+                    <span id="avgDelay">0.0</span>
+                    <small>s</small>
                 </div>
             </div>
             
@@ -552,14 +607,29 @@
         let lightState = 'green';
         let lastLightChange = 0;
         let pedestrianActive = false;
+        let totalDelay = 0;
+        let delayCount = 0;
         
         const road = document.getElementById('road');
         const roadWidth = 850; // Fixed width
         
         // Initialize
         window.onload = function() {
-            switchTab('pedestrian');
+            // Get the first tab button and pass it
+            const firstTab = document.querySelector('.tab-button');
+            switchTab('pedestrian', firstTab);
         };
+        
+        // FIXED: Adaptive light duration based on density
+        function getLightDuration() {
+            if (density > 0.18) {
+                return 8000; // 8 seconds for high density
+            } else if (density > 0.12) {
+                return 6000; // 6 seconds for medium density
+            } else {
+                return 4000; // 4 seconds for low density
+            }
+        }
         
         // Create cars
         function createCars() {
@@ -576,7 +646,6 @@
             
             // Add scenario elements
             if (currentTab === 'pedestrian') {
-                // FIXED: Proper crosswalk with visible stripes - CHANGED "PED XING" to "PEDESTRIAN"
                 const crosswalkContainer = document.createElement('div');
                 crosswalkContainer.className = 'crosswalk-container';
                 crosswalkContainer.innerHTML = `
@@ -593,7 +662,6 @@
                 container.appendChild(crosswalkContainer);
             }
             else if (currentTab === 'intersection') {
-                // Intersection with vertical road
                 const verticalRoad = document.createElement('div');
                 verticalRoad.className = 'vertical-road';
                 container.appendChild(verticalRoad);
@@ -602,7 +670,6 @@
                 intersection.className = 'intersection-box';
                 container.appendChild(intersection);
                 
-                // Traffic light
                 const light = document.createElement('div');
                 light.className = 'traffic-light';
                 light.innerHTML = `
@@ -612,12 +679,10 @@
                 `;
                 container.appendChild(light);
                 
-                // Stop line
                 const stopLine = document.createElement('div');
                 stopLine.className = 'stop-line';
                 container.appendChild(stopLine);
                 
-                document.getElementById('trafficLightState').style.display = 'block';
                 lastLightChange = Date.now();
             }
             else if (currentTab === 'school') {
@@ -636,7 +701,6 @@
                 const car = document.createElement('div');
                 car.className = 'car sedan';
                 
-                // Random car type
                 const rand = Math.random();
                 if (rand < 0.6) car.classList.add('sedan');
                 else if (rand < 0.85) car.classList.add('suv');
@@ -652,6 +716,7 @@
                     x: startX,
                     speed: calculateSpeed() * (0.9 + Math.random() * 0.2),
                     waiting: false,
+                    waitStart: 0,
                     type: car.classList.contains('suv') ? 'suv' : car.classList.contains('truck') ? 'truck' : 'sedan'
                 });
             }
@@ -664,7 +729,6 @@
             
             let speed = C * Math.log(P_max / density);
             
-            // Scenario limits
             if (currentTab === 'pedestrian') speed = Math.min(speed, 25);
             if (currentTab === 'intersection') speed = Math.min(speed, 30);
             if (currentTab === 'school') speed = Math.min(speed, 20);
@@ -672,42 +736,42 @@
             return Math.max(0, Math.min(C, speed));
         }
         
-        // Update traffic lights
+        // Update traffic lights - FIXED: Now adaptive based on density
         function updateLights() {
             if (currentTab !== 'intersection') return;
             
             const now = Date.now();
-            if (now - lastLightChange > 5000) {
+            const lightDuration = getLightDuration();
+            
+            if (now - lastLightChange > lightDuration) {
                 if (lightState === 'green') lightState = 'yellow';
                 else if (lightState === 'yellow') lightState = 'red';
                 else lightState = 'green';
                 lastLightChange = now;
             }
             
-            // Update light display
             const lights = document.querySelectorAll('.traffic-light .light');
             if (lights.length) {
                 lights.forEach(l => l.style.opacity = '0.3');
                 
                 if (lightState === 'green') {
                     lights[2].style.opacity = '1';
-                    document.getElementById('lightStatus').innerHTML = '🟢 GO';
                 } else if (lightState === 'yellow') {
                     lights[1].style.opacity = '1';
-                    document.getElementById('lightStatus').innerHTML = '🟡 CAUTION';
                 } else {
                     lights[0].style.opacity = '1';
-                    document.getElementById('lightStatus').innerHTML = '🔴 STOP';
                 }
             }
         }
         
-        // Update display
+        // Update display - FIXED: Added congestion meter and delay
         function updateDisplay() {
             if (currentTab === 'report') return;
             
             const speed = calculateSpeed();
             const flow = density * speed;
+            const congestionLevel = 1 - (speed / C);
+            const congestionPercent = Math.round(congestionLevel * 100);
             
             document.getElementById('Cvalue').textContent = C;
             document.getElementById('Pvalue').textContent = P_max.toFixed(2);
@@ -716,6 +780,36 @@
             document.getElementById('speed').textContent = speed.toFixed(1);
             document.getElementById('flow').textContent = flow.toFixed(2);
             document.getElementById('spacing').textContent = (1/density).toFixed(1);
+            
+            // Update congestion meter
+            document.getElementById('congestionPercent').textContent = congestionPercent + '%';
+            document.getElementById('congestionFill').style.width = congestionPercent + '%';
+            
+            // Update light status
+            if (currentTab === 'intersection') {
+                if (lightState === 'green') document.getElementById('lightStatus').innerHTML = '🟢 GO';
+                else if (lightState === 'yellow') document.getElementById('lightStatus').innerHTML = '🟡 CAUTION';
+                else document.getElementById('lightStatus').innerHTML = '🔴 STOP';
+            } else {
+                document.getElementById('lightStatus').innerHTML = '—';
+            }
+            
+            // Update average delay
+            if (delayCount > 0) {
+                const avgDelay = (totalDelay / delayCount).toFixed(1);
+                document.getElementById('avgDelay').textContent = avgDelay;
+            }
+        }
+        
+        // NEW: Car following logic
+        function getDistanceToNextCar(currentX, currentIndex) {
+            let nextX = roadWidth;
+            for (let i = 0; i < cars.length; i++) {
+                if (i !== currentIndex && cars[i].x > currentX && cars[i].x < nextX) {
+                    nextX = cars[i].x;
+                }
+            }
+            return nextX - currentX;
         }
         
         // Update car positions
@@ -738,8 +832,21 @@
                 }
             }
             
-            cars.forEach(car => {
+            totalDelay = 0;
+            delayCount = 0;
+            
+            cars.forEach((car, index) => {
                 let speed = baseSpeed * (0.9 + Math.random() * 0.2);
+                const wasWaiting = car.waiting;
+                
+                // NEW: Car following logic - check distance to car ahead
+                const distanceToNext = getDistanceToNextCar(car.x, index);
+                if (distanceToNext < 30) { // Too close
+                    speed = Math.min(speed, baseSpeed * 0.3); // Slow down
+                }
+                if (distanceToNext < 10) { // Dangerously close
+                    speed = 0; // Stop
+                }
                 
                 // Intersection logic
                 if (currentTab === 'intersection') {
@@ -748,32 +855,58 @@
                         if (lightState === 'red') {
                             speed = 0;
                             car.waiting = true;
+                            if (car.waitStart === 0) car.waitStart = Date.now();
                         } else if (lightState === 'yellow' && distToIntersection < 30) {
                             speed *= 0.3;
                             car.waiting = true;
+                            if (car.waitStart === 0) car.waitStart = Date.now();
                         } else {
                             car.waiting = false;
+                            if (car.waitStart > 0) {
+                                const delay = (Date.now() - car.waitStart) / 1000;
+                                totalDelay += delay;
+                                delayCount++;
+                                car.waitStart = 0;
+                            }
                         }
                     } else {
                         car.waiting = false;
+                        if (car.waitStart > 0) {
+                            const delay = (Date.now() - car.waitStart) / 1000;
+                            totalDelay += delay;
+                            delayCount++;
+                            car.waitStart = 0;
+                        }
                     }
                 }
                 
-                // Pedestrian logic - Cars stop at crosswalk when pedestrian active
+                // Pedestrian logic
                 if (currentTab === 'pedestrian') {
                     const distToCrosswalk = Math.abs(car.x - 400);
                     if (distToCrosswalk < 50 && pedestrianActive) {
                         speed = 0;
                         car.waiting = true;
+                        if (car.waitStart === 0) car.waitStart = Date.now();
                     } else {
                         car.waiting = false;
+                        if (car.waitStart > 0) {
+                            const delay = (Date.now() - car.waitStart) / 1000;
+                            totalDelay += delay;
+                            delayCount++;
+                            car.waitStart = 0;
+                        }
                     }
                 }
                 
                 // School zone logic
                 if (currentTab === 'school' && car.x > 300 && car.x < 500) {
                     speed = Math.min(speed, 8);
-                    if (Math.random() < 0.0005) speed = 0;
+                    if (Math.random() < 0.0005) {
+                        speed = 0;
+                        car.waiting = true;
+                    } else {
+                        car.waiting = false;
+                    }
                 }
                 
                 // Move car
@@ -784,15 +917,17 @@
                 
                 // Color by status
                 if (car.waiting) {
-                    car.element.style.background = '#e74c3c'; // Red
+                    car.element.style.background = '#e74c3c';
                 } else if (speed > C * 0.7) {
-                    car.element.style.background = '#27ae60'; // Green
+                    car.element.style.background = '#27ae60';
                 } else if (speed > C * 0.4) {
-                    car.element.style.background = '#f39c12'; // Yellow
+                    car.element.style.background = '#f39c12';
                 } else {
-                    car.element.style.background = '#e67e22'; // Orange
+                    car.element.style.background = '#e67e22';
                 }
             });
+            
+            updateDisplay();
         }
         
         // Simulation loop
@@ -848,6 +983,8 @@
             P_max = 0.25;
             lightState = 'green';
             pedestrianActive = false;
+            totalDelay = 0;
+            delayCount = 0;
             
             document.getElementById('density').value = density;
             document.getElementById('C').value = C;
@@ -860,13 +997,12 @@
             updateDisplay();
         }
         
-        // Tab switching
-        function switchTab(tab) {
+        // FIXED: Tab switching with proper event handling
+        function switchTab(tab, element) {
             currentTab = tab;
             
-            // Update buttons
             document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
+            element.classList.add('active');
             
             const simulationView = document.getElementById('simulationView');
             const reportView = document.getElementById('reportView');
@@ -884,18 +1020,14 @@
             simulationView.style.display = 'block';
             reportView.style.display = 'none';
             
-            // Update scenario text
             if (tab === 'pedestrian') {
                 scenarioText.textContent = '🚶 Pedestrian Crossing - Cars stop when pedestrians are crossing';
-                lightBox.style.display = 'none';
                 pedestrianActive = false;
             } else if (tab === 'intersection') {
-                scenarioText.textContent = '🚦 4-Way Intersection - Traffic Lights Active';
-                lightBox.style.display = 'block';
+                scenarioText.textContent = '🚦 4-Way Intersection - Adaptive Traffic Lights Active';
                 lightState = 'green';
             } else if (tab === 'school') {
                 scenarioText.textContent = '🏫 School Zone - Speed Limited, Watch for Children';
-                lightBox.style.display = 'none';
             }
             
             createCars();
