@@ -121,7 +121,7 @@
             position: absolute;
             border-radius: 4px;
             z-index: 10;
-            transition: left 0.1s linear;
+            transition: left 0.05s linear;
             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
         }
         
@@ -452,23 +452,13 @@
             font-size: 20px;
             margin: 15px 0;
         }
-        
-        /* Average Delay */
-        .delay-badge {
-            background: #e74c3c;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            margin-left: 5px;
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🚦 DRIVE Traffic Control</h1>
         
-        <!-- Tabs - FIXED: Added 'this' to pass element -->
+        <!-- Tabs -->
         <div class="tabs">
             <button class="tab-button active" onclick="switchTab('pedestrian', this)">🚶 Pedestrian</button>
             <button class="tab-button" onclick="switchTab('intersection', this)">🚦 Intersection</button>
@@ -495,7 +485,7 @@
                 </div>
             </div>
             
-            <!-- NEW: Congestion Meter -->
+            <!-- Congestion Meter -->
             <div class="congestion-meter">
                 <div class="meter-label">
                     <span>Congestion Level</span>
@@ -506,7 +496,7 @@
                 </div>
             </div>
             
-            <!-- Info Panel - Updated with 5 boxes -->
+            <!-- Info Panel -->
             <div class="info-panel">
                 <div class="info-box">
                     <strong>Speed</strong>
@@ -591,15 +581,6 @@
                 
                 <h2>UAE Vision 2031</h2>
                 <p>Supports national goals for smart cities and sustainability.</p>
-                <p>🌍 Building a strong, diversified economy that relies less on oil and more on innovation, trade, tourism, and technology.
-
-                    👨‍👩‍👧‍👦 Improving quality of life through better education, healthcare, safety, and social stability.
-                    
-                    🚀 Encouraging innovation and digital transformation, making the UAE a global leader in advanced technology and smart government services.
-                    
-                    🤝 Strengthening global partnerships and increasing the UAE’s influence in international trade, sustainability, and diplomacy.
-                    
-                    🌱 Promoting sustainability to ensure long-term environmental and economic growth.</p>
             </div>
         </div>
     </div>
@@ -618,18 +599,19 @@
         let pedestrianActive = false;
         let totalDelay = 0;
         let delayCount = 0;
+        let carCounter = 0;
+        let lastSpawnTime = 0;
         
         const road = document.getElementById('road');
         const roadWidth = 850; // Fixed width
         
         // Initialize
         window.onload = function() {
-            // Get the first tab button and pass it
             const firstTab = document.querySelector('.tab-button');
             switchTab('pedestrian', firstTab);
         };
         
-        // FIXED: Adaptive light duration based on density
+        // Adaptive light duration based on density
         function getLightDuration() {
             if (density > 0.18) {
                 return 8000; // 8 seconds for high density
@@ -640,18 +622,52 @@
             }
         }
         
-        // Create cars
+        // Get random car type
+        function getRandomCarType() {
+            const rand = Math.random();
+            if (rand < 0.6) return 'sedan';
+            else if (rand < 0.85) return 'suv';
+            else return 'truck';
+        }
+        
+        // Create a new car at the left edge
+        function spawnNewCar() {
+            if (currentTab === 'report') return null;
+            
+            const container = document.getElementById('scenarioContainer');
+            const car = document.createElement('div');
+            const carType = getRandomCarType();
+            
+            car.className = `car ${carType}`;
+            
+            // Start at left edge with slight random offset
+            const startX = -30 + (Math.random() * 20);
+            car.style.left = startX + 'px';
+            car.style.top = (75 + (Math.random() * 10 - 5)) + 'px';
+            
+            container.appendChild(car);
+            
+            carCounter++;
+            
+            return {
+                element: car,
+                x: startX,
+                speed: calculateSpeed() * (0.9 + Math.random() * 0.2),
+                waiting: false,
+                waitStart: 0,
+                type: carType,
+                id: carCounter
+            };
+        }
+        
+        // Create initial cars
         function createCars() {
             if (currentTab === 'report') return;
             
             const container = document.getElementById('scenarioContainer');
             container.innerHTML = '';
             cars = [];
-            
-            const numCars = Math.floor(density * 30); // Scale for display
-            if (numCars === 0) return;
-            
-            const spacing = roadWidth / numCars;
+            carCounter = 0;
             
             // Add scenario elements
             if (currentTab === 'pedestrian') {
@@ -705,30 +721,19 @@
                 container.appendChild(sign);
             }
             
-            // Create cars
+            // Create initial cars based on density
+            const numCars = Math.floor(density * 15);
             for (let i = 0; i < numCars; i++) {
-                const car = document.createElement('div');
-                car.className = 'car sedan';
-                
-                const rand = Math.random();
-                if (rand < 0.6) car.classList.add('sedan');
-                else if (rand < 0.85) car.classList.add('suv');
-                else car.classList.add('truck');
-                
-                const startX = i * spacing + (Math.random() * 10);
-                car.style.left = Math.min(roadWidth - 35, startX) + 'px';
-                car.style.top = (75 + (Math.random() * 10 - 5)) + 'px';
-                
-                container.appendChild(car);
-                cars.push({
-                    element: car,
-                    x: startX,
-                    speed: calculateSpeed() * (0.9 + Math.random() * 0.2),
-                    waiting: false,
-                    waitStart: 0,
-                    type: car.classList.contains('suv') ? 'suv' : car.classList.contains('truck') ? 'truck' : 'sedan'
-                });
+                const newCar = spawnNewCar();
+                if (newCar) {
+                    // Distribute them across the road
+                    newCar.x = (i * (roadWidth / numCars)) + (Math.random() * 30);
+                    newCar.element.style.left = newCar.x + 'px';
+                    cars.push(newCar);
+                }
             }
+            
+            lastSpawnTime = Date.now();
         }
         
         // Calculate speed
@@ -745,7 +750,7 @@
             return Math.max(0, Math.min(C, speed));
         }
         
-        // Update traffic lights - FIXED: Now adaptive based on density
+        // Update traffic lights
         function updateLights() {
             if (currentTab !== 'intersection') return;
             
@@ -773,7 +778,7 @@
             }
         }
         
-        // Update display - FIXED: Added congestion meter and delay
+        // Update display
         function updateDisplay() {
             if (currentTab === 'report') return;
             
@@ -810,7 +815,7 @@
             }
         }
         
-        // NEW: Car following logic
+        // Get distance to next car
         function getDistanceToNextCar(currentX, currentIndex) {
             let nextX = roadWidth;
             for (let i = 0; i < cars.length; i++) {
@@ -821,9 +826,24 @@
             return nextX - currentX;
         }
         
-        // Update car positions
+        // Spawn new cars continuously
+        function trySpawnCar() {
+            const now = Date.now();
+            // Spawn based on density - higher density = more frequent spawning
+            const spawnInterval = Math.max(800, 3000 - (density * 8000));
+            
+            if (now - lastSpawnTime > spawnInterval) {
+                const newCar = spawnNewCar();
+                if (newCar) {
+                    cars.push(newCar);
+                }
+                lastSpawnTime = now;
+            }
+        }
+        
+        // Update car positions - FIXED: Cars are destroyed immediately when reaching the end
         function updateCars() {
-            if (currentTab === 'report' || cars.length === 0) return;
+            if (currentTab === 'report') return;
             
             const baseSpeed = calculateSpeed();
             
@@ -841,20 +861,26 @@
                 }
             }
             
+            // Try to spawn new cars
+            trySpawnCar();
+            
             totalDelay = 0;
             delayCount = 0;
             
+            // Create a new array for cars that remain on the road
+            const remainingCars = [];
+            
+            // Process each car
             cars.forEach((car, index) => {
                 let speed = baseSpeed * (0.9 + Math.random() * 0.2);
-                const wasWaiting = car.waiting;
                 
-                // NEW: Car following logic - check distance to car ahead
+                // Car following logic
                 const distanceToNext = getDistanceToNextCar(car.x, index);
-                if (distanceToNext < 30) { // Too close
-                    speed = Math.min(speed, baseSpeed * 0.3); // Slow down
+                if (distanceToNext < 30) {
+                    speed = Math.min(speed, baseSpeed * 0.3);
                 }
-                if (distanceToNext < 10) { // Dangerously close
-                    speed = 0; // Stop
+                if (distanceToNext < 10) {
+                    speed = 0;
                 }
                 
                 // Intersection logic
@@ -920,19 +946,37 @@
                 
                 // Move car
                 car.x += speed * 0.1;
-                if (car.x > roadWidth) car.x = 0;
                 
+                // Check if car has reached the end - DESTROY IT IMMEDIATELY
+                if (car.x > roadWidth) {
+                    car.element.remove(); // Remove from DOM
+                    // Don't add to remainingCars - it's gone forever
+                } else {
+                    // Car is still on the road, keep it
+                    remainingCars.push(car);
+                }
+            });
+            
+            // Replace cars array with only the remaining cars
+            cars = remainingCars;
+            
+            // Update positions of remaining cars
+            cars.forEach(car => {
                 car.element.style.left = car.x + 'px';
                 
                 // Color by status
                 if (car.waiting) {
                     car.element.style.background = '#e74c3c';
-                } else if (speed > C * 0.7) {
-                    car.element.style.background = '#27ae60';
-                } else if (speed > C * 0.4) {
-                    car.element.style.background = '#f39c12';
                 } else {
-                    car.element.style.background = '#e67e22';
+                    // Use current speed for color
+                    const currentSpeed = baseSpeed * (0.9 + Math.random() * 0.2);
+                    if (currentSpeed > C * 0.7) {
+                        car.element.style.background = '#27ae60';
+                    } else if (currentSpeed > C * 0.4) {
+                        car.element.style.background = '#f39c12';
+                    } else {
+                        car.element.style.background = '#e67e22';
+                    }
                 }
             });
             
@@ -950,26 +994,21 @@
         // Button functions
         function addCar() {
             if (currentTab === 'report') return;
-            if (density < P_max - 0.02) {
-                density += 0.02;
-                density = Math.min(P_max - 0.01, density);
-                document.getElementById('density').value = density;
-                document.getElementById('densityValue').textContent = density.toFixed(2);
-                createCars();
-                updateDisplay();
+            const newCar = spawnNewCar();
+            if (newCar) {
+                newCar.x = -20; // Start just off screen
+                newCar.element.style.left = newCar.x + 'px';
+                cars.push(newCar);
             }
         }
         
         function removeCar() {
-            if (currentTab === 'report') return;
-            if (density > 0.03) {
-                density -= 0.02;
-                density = Math.max(0.02, density);
-                document.getElementById('density').value = density;
-                document.getElementById('densityValue').textContent = density.toFixed(2);
-                createCars();
-                updateDisplay();
-            }
+            if (currentTab === 'report' || cars.length === 0) return;
+            // Remove a random car
+            const randomIndex = Math.floor(Math.random() * cars.length);
+            const carToRemove = cars[randomIndex];
+            carToRemove.element.remove();
+            cars.splice(randomIndex, 1);
         }
         
         function startSimulation() {
@@ -1006,7 +1045,7 @@
             updateDisplay();
         }
         
-        // FIXED: Tab switching with proper event handling
+        // Tab switching
         function switchTab(tab, element) {
             currentTab = tab;
             
@@ -1016,7 +1055,6 @@
             const simulationView = document.getElementById('simulationView');
             const reportView = document.getElementById('reportView');
             const scenarioText = document.getElementById('scenarioText');
-            const lightBox = document.getElementById('trafficLightState');
             
             if (tab === 'report') {
                 simulationView.style.display = 'none';
@@ -1030,13 +1068,13 @@
             reportView.style.display = 'none';
             
             if (tab === 'pedestrian') {
-                scenarioText.textContent = '🚶 Pedestrian Crossing - Cars stop when pedestrians are crossing';
+                scenarioText.textContent = '🚶 Pedestrian Crossing';
                 pedestrianActive = false;
             } else if (tab === 'intersection') {
-                scenarioText.textContent = '🚦 4-Way Intersection - Adaptive Traffic Lights Active';
+                scenarioText.textContent = '🚦 4-Way Intersection';
                 lightState = 'green';
             } else if (tab === 'school') {
-                scenarioText.textContent = '🏫 School Zone - Speed Limited, Watch for Children';
+                scenarioText.textContent = '🏫 School Zone';
             }
             
             createCars();
@@ -1048,7 +1086,7 @@
             if (currentTab === 'report') return;
             density = parseFloat(e.target.value);
             document.getElementById('densityValue').textContent = density.toFixed(2);
-            createCars();
+            // Don't recreate cars, just update behavior
             updateDisplay();
         });
         
@@ -1070,7 +1108,6 @@
                 document.getElementById('densityValue').textContent = density.toFixed(2);
             }
             
-            createCars();
             updateDisplay();
         });
     </script>
